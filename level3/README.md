@@ -1,15 +1,26 @@
 # Level 3: Multi-Task Sandbox
 
-## Design Decisions
-- **Task Quotas**: Each task is assigned a specific memory quota. The allocator checks this quota before granting any memory request, preventing a single task from exhausting system resources.
-- **Leak Detection**: After a task completes, the sandbox scans the entire heap for any blocks still tagged with that task's ID. This provides an automated way to identify memory leaks.
-- **Peak Usage Tracking**: The system tracks the maximum amount of memory each task has allocated at any single point in time.
+## Designing Process
 
-## Strategy: Resource Isolation
-- **Why**: In a multi-tasking embedded environment, isolating resources is crucial for stability. By tagging every block with a `task_id` and enforcing quotas, we ensure that a bug in one task (like a memory leak or an over-allocation) does not cause the entire system to crash.
+Kept the Level 2 allocator and added supervisor controls around it.
+The focus here is isolation: each task gets limits, tracked usage, and post-run leak checks.
+
+## Design Decisions
+
+- Each block stores `task_id`; allocator updates per-task usage on alloc/free.
+- `task_spawn()` wraps task execution and produces a `TaskReport`.
+- Quota violations set `quota_exceeded=true` and reject allocation.
+- Leak reporting is post-task and based on surviving USED blocks.
+
+## Strategy Chosen and Why
+
+Used quota-based gating before allocation, plus per-task accounting during allocation/free.
+This catches abuse early and keeps one task from consuming the full heap.
+Leak scanning after task execution gives a simple practical signal for memory hygiene.
 
 ## Benchmark Output
-### System Test Results
+
+### System Test
 ```text
 ========== LEVEL 3 SYSTEM TEST ==========
 REPORT Task 1: Peak=100, Exceeded=NO
@@ -20,9 +31,14 @@ Cannot allocate 1000 bytes[Task 3] My allocation was blocked by the Supervisor!
 REPORT Task 3: Peak=0, Exceeded=YES
 ```
 
-### FINAL HEAP MAP
+### Final Heap Map
 ```text
 [offset=   0  size=200     status=USED  task=2    csum=OK ]
 [offset= 208  size=65320   status=FREE  task=0    csum=OK ]
 HEAP SUMMARY: 2 blocks | 1 used | 1 free | 65320 free bytes
+```
+
+### `mem_stats()`
+```text
+free=65320  largest=65320  frags=1  ratio=0.000
 ```

@@ -1,15 +1,27 @@
 # Level 1: Fixed-Size Block Allocator
 
-## Design Decisions
-- **Fixed-Size Blocks**: The memory is divided into 1024 blocks of 64 bytes each. This simplifies management as each block is identical in structure and size.
-- **Header Structure**: Each block starts with an 8-byte header containing the size (56 usable bytes), status (FREE/USED), task ID, and an XOR checksum.
-- **Safety**: An XOR checksum is computed for every header to detect memory corruption.
+## Designing Process
 
-## Strategy: Fixed-Size Allocation
-- **Why**: Choosing a fixed-size strategy eliminates external fragmentation. It is highly predictable and fast, which is critical for many embedded real-time systems. While it may lead to internal fragmentation (wasted space within a block), the overhead is offset by the simplicity of the `mem_alloc` and `mem_free` logic.
+Started with a deterministic baseline for the 64 KB RAM model:
+fixed block size first, then minimal metadata validation, then simple allocate/free path.
+The goal at this stage was correctness and debuggability, not best memory utilization.
+
+## Design Decisions
+
+- 1024 fixed blocks (`64 KB / 64`).
+- Header fields: `size`, `status`, `task_id`, `checksum`.
+- `mem_alloc`: find first free valid block and mark USED.
+- `mem_free`: validate pointer shape and block status, then mark FREE.
+
+## Strategy Chosen and Why
+
+Fixed-size allocation was chosen for predictability.
+It removes external fragmentation and keeps the allocator logic straightforward.
+Tradeoff accepted: internal fragmentation inside partially used 56-byte payload blocks.
 
 ## Benchmark Output
-### mem_dump()
+
+### `mem_dump()`
 ```text
 Allocated: p1=8  p2=72
 [offset=   0  size=56      status=FREE  task=0    csum=OK ]
@@ -19,7 +31,7 @@ Allocated: p1=8  p2=72
 HEAP SUMMARY: 1024 blocks | 1 used | 1023 free | 57288 free bytes
 ```
 
-### mem_stats()
+### `mem_stats()`
 ```text
 free=65472  largest=56  frags=1023  ratio=0.999
 ```

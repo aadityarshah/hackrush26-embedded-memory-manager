@@ -1,5 +1,5 @@
 /*
- * MEMSIM — Level 1 Skeleton (C)
+ * MEMSIM — Level 3 Skeleton (C)
  * =============================
  * Structure aligned with starter_harness.c.
  * Keep TODOs for implementation work.

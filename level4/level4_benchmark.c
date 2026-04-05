@@ -4,7 +4,12 @@
 #include <stdint.h>
 #include <time.h>
 
-/* Include your level4 code */
+/* 
+ * We include the source file directly so we can access internal 
+ * globals like task_table and DEVICE_RAM for the benchmark.
+ * Note: Make sure level4.c does NOT have a main() or use the 
+ * #define main level4_main trick.
+ */
 #define main level4_unused_main
 #include "level4.c"
 #undef main
@@ -13,120 +18,93 @@
 #define BLOCK_SIZE 64
 #define LARGE_REQUEST 8192
 
-bool run_compaction_benchmark() {
+int main() {
+    printf("============================================================\n");
+    printf("MEMSIM — Level 4 Compaction C-Benchmark\n");
+    printf("============================================================\n");
+
     mem_init();
     handles_init();
 
     // ── Phase 1: Fill to ~90% ────────────────────────────────────────────────
-    printf("\n  Phase 1 — Fill to ~90%%\n");
-    int handles[MAX_HANDLES];
-    int handle_count = 0;
+    printf("\nPhase 1 — Fill to ~90%%\n");
+    
+    int handles[1024];
+    int total_handles = 0;
     int target_bytes = (int)(DEVICE_RAM * TARGET_FILL);
-    int used = 0;
+    int used_estimate = 0;
 
-    while (used + BLOCK_SIZE + (int)HEADER_SIZE < target_bytes && handle_count < MAX_HANDLES) {
+    // Set quota for Task 1 so allocations don't get rejected
+    task_table[1].quota_bytes = DEVICE_RAM; 
+
+    while (used_estimate + BLOCK_SIZE + HEADER_SIZE < target_bytes && total_handles < 1024) {
         int h = mem_alloc_handle(BLOCK_SIZE, 1);
         if (h == -1) break;
-        handles[handle_count++] = h;
-        used += BLOCK_SIZE + HEADER_SIZE;
+        handles[total_handles++] = h;
+        used_estimate += (BLOCK_SIZE + HEADER_SIZE);
     }
-
-    printf("    Allocated %d handles, ~%d bytes used\n", handle_count, used);
+    printf("    Allocated %d handles, ~%d bytes used\n", total_handles, used_estimate);
 
     // ── Phase 2: Free every other handle ─────────────────────────────────────
-    printf("\n  Phase 2 — Free every other handle (create fragmentation)\n");
-    int freed = 0;
-    int keep_count = 0;
-    int keep_handles[MAX_HANDLES];
-
-    for (int i = 0; i < handle_count; i++) {
-        if (i % 2 == 0) {
-            mem_free_handle(handles[i]);
-            freed++;
-        } else {
-            keep_handles[keep_count++] = handles[i];
-        }
+    printf("\nPhase 2 — Free every other handle (create fragmentation)\n");
+    int freed_count = 0;
+    for (int i = 0; i < total_handles; i += 2) {
+        mem_free_handle(handles[i]);
+        handles[i] = -1; // Mark as freed in our local tracker
+        freed_count++;
     }
+    printf("    Freed %d handles — heap is now fragmented\n", freed_count);
 
-    printf("    Freed %d handles — heap is now fragmented\n", freed);
-
-    // Confirm direct alloc fails (using a large enough size that coalescing alone won't solve it if fragmented)
-    printf("\n  Phase 3 — Request large contiguous block (%d bytes)\n", LARGE_REQUEST);
+    // ── Phase 3: Request large block ─────────────────────────────────────────
+    printf("\nPhase 3 — Request large block (%d bytes)\n", LARGE_REQUEST);
     
-    // We bypass the auto-compaction in mem_alloc_handle for the "direct" check 
-    // by using the underlying mem_alloc directly.
-    int direct = mem_alloc(LARGE_REQUEST, 2, 0);
+    // Set quota for Task 2
+    task_table[2].quota_bytes = DEVICE_RAM;
 
-    if (direct != -1) {
-        printf("    Direct alloc: SUCCESS without compaction (offset=%d)\n", direct);
-        printf("    NOTE: Your allocator coalesced enough; compaction not triggered.\n");
-        mem_free(direct);
-        return true;
+    // First, verify that a normal mem_alloc (without compaction) would fail
+    // Strategy 0 = First Fit
+    int direct_fail = mem_alloc(LARGE_REQUEST, 2, 0, NO_HANDLE);
+    if (direct_fail != -1) {
+        printf("    [NOTE] Direct alloc succeeded without compaction. \n");
+        printf("           Your allocator is very efficient at coalescing!\n");
+    } else {
+        printf("    Direct alloc: FAILED (fragmented, as expected)\n");
     }
 
-    printf("    Direct alloc: FAILED (fragmented, as expected)\n");
-
-    // ── Phase 3: Compact and retry ────────────────────────────────────────────
+    // Now, run the Level 4 wrapper that SHOULD trigger compaction
     clock_t t0 = clock();
-    int recovered = mem_compact();
+    int h_large = mem_alloc_or_compact(LARGE_REQUEST, 2);
     clock_t t1 = clock();
 
-    double compact_ms = ((double)(t1 - t0) / CLOCKS_PER_SEC) * 1000.0;
-    printf("    Compacting... recovered %d bytes  (%.2f ms)\n", recovered, compact_ms);
+    double elapsed_ms = ((double)(t1 - t0) / CLOCKS_PER_SEC) * 1000;
 
-    // Verify all existing handles still resolve correctly
+    if (h_large == -1) {
+        printf("    Post-compact alloc: FAILED. Compaction did not create enough space.\n");
+        return 1;
+    }
+    printf("    Post-compact alloc: SUCCESS (handle=%d)\n", h_large);
+    printf("    Time taken: %.2f ms\n", elapsed_ms);
+
+    // ── Phase 4: Validate Handle Integrity ───────────────────────────────────
+    printf("\nPhase 4 — Validate surviving handle data integrity\n");
     int bad_handles = 0;
-    for (int i = 0; i < keep_count; i++) {
-        if (deref_handle(keep_handles[i]) == -1) {
+    for (int i = 1; i < total_handles; i += 2) {
+        if (deref_handle(handles[i]) == -1) {
             bad_handles++;
         }
     }
 
-    if (bad_handles) {
-        printf("    ERROR: %d handles became invalid after compaction!\n", bad_handles);
-        return false;
+    if (bad_handles > 0) {
+        printf("    FAIL: %d handles became invalid after compaction!\n", bad_handles);
+        printf("    (Check if mem_compact is patching the handle_table correctly)\n");
+        return 1;
+    } else {
+        printf("    All surviving handles valid: YES\n");
     }
-
-    // Now try to allocate the large block through handle system
-    int post = mem_alloc_handle(LARGE_REQUEST, 2);
-    clock_t t2 = clock();
-    double total_ms = ((double)(t2 - t0) / CLOCKS_PER_SEC) * 1000.0;
-
-    if (post == -1) {
-        printf("    Post-compact alloc: FAILED — not enough contiguous space after compaction.\n");
-        return false;
-    }
-
-    printf("    Post-compact alloc: SUCCESS (handle=%d)\n", post);
-    printf("    Total time (compact + alloc): %.2f ms\n", total_ms);
-
-    // ── Phase 4 — Validate surviving handle data integrity ───────────────────────────
-    printf("\n  Phase 4 — Validate surviving handle data integrity\n");
-    bool all_valid = true;
-    for (int i = 0; i < keep_count; i++) {
-        if (deref_handle(keep_handles[i]) == -1) {
-            all_valid = false;
-            break;
-        }
-    }
-    printf("    All %d surviving handles valid: %s\n", keep_count, all_valid ? "YES" : "NO");
-
-    return post != -1 && all_valid;
-}
-
-int main() {
-    printf("============================================================\n");
-    printf("MEMSIM — Level 4 Compaction Benchmark (C Translation)\n");
-    printf("============================================================\n");
-
-    bool passed = run_compaction_benchmark();
 
     printf("\n------------------------------------------------------------\n");
-    if (passed) {
-        printf("  Compaction benchmark: PASSED\n");
-    } else {
-        printf("  Compaction benchmark: FAILED\n");
-    }
+    printf("  Compaction benchmark: PASSED\n");
+    printf("------------------------------------------------------------\n");
 
-    return passed ? 0 : 1;
+    return 0;
 }

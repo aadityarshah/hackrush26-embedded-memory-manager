@@ -1,12 +1,16 @@
-# Bonus: Generational Tracing GC
+# Bonus: Generational Tracing GC (Future Scope)
 
-## Implementation Status
-**Status: Not Implemented**
+## Status
 
-Due to time constraints and the complexity of implementing a robust generational tracing garbage collector within the provided environment, this feature was not completed for the current submission.
+Not implemented in the current submission.
 
-## Future Scope
-- **Mark-and-Sweep Algorithm**: Implement a reachability-based tracing algorithm to automatically reclaim memory.
-- **Generational Collection**: Separate objects into "young" and "old" generations to optimize GC frequency and performance.
-- **Root Set Integration**: Define a mechanism for identifying root pointers within the simulated environment.
-- **Memory Safety**: Eliminate manual memory management errors like double-frees and leaks through automated reclamation.
+## Intent
+
+Move from manual lifetime management toward automatic reclamation for long-running multi-task systems.
+
+## Planned Direction
+
+- Add mark-and-sweep reachability traversal.
+- Introduce young/old generations for cheaper common-case collection.
+- Define root discovery strategy for stack/globals/task-owned references.
+- Integrate safely with existing handle-based allocator model.

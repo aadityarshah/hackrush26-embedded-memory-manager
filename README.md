@@ -1,45 +1,60 @@
-# IIT Gandhinagar HackRush'26 — Embedded Systems Memory Manager
+# HackRush'26 Embedded Memory Manager
 
-This repository contains a multi-level implementation of a custom memory manager for a simulated 64KB RAM, built from scratch in C99.
+A C99 memory-management project built for a simulated 64 KB embedded RAM.  
+The repository is organized as progressive levels, where each level keeps the previous foundations and introduces one major systems concern.
 
-## Project Overview
-The project evolves from a simple fixed-size block allocator to a sophisticated multi-tasking sandbox, with an experimental look into heap compaction.
+## Overview
 
-### Implemented Levels
-- **Level 1: Fixed-Size Block Allocator** (Complete)
-  - Predictable 64-byte block system with XOR checksums.
-- **Level 2: Variable-Sized Block Allocator** (Complete)
-  - Dynamic allocation with First-Fit/Best-Fit and block coalescing.
-- **Level 3: Multi-Task Sandbox** (Complete)
-  - Resource isolation, quotas, and automated leak detection.
-- **Level 4: Heap Compaction & OOM Recovery** (Partial Implementation)
-  - Implementation of a handle-based redirection table.
-  - Experimental "Move-and-Patch" compaction logic to solve external fragmentation.
+| Level | Focus | Key Additions |
+|---|---|---|
+| 1 | Deterministic allocation | Fixed-size blocks, metadata checksum validation |
+| 2 | Space efficiency | Variable-size blocks, First-Fit/Best-Fit, block splitting/coalescing |
+| 3 | Multi-task isolation | Per-task quota enforcement, peak usage tracking, leak scan |
+| 4 | Recovery under pressure | Handle indirection, heap compaction, OOM eviction fallback |
+| Bonus | Future scope | Generational tracing GC direction (not implemented) |
 
 ## Repository Structure
+
 ```text
-hackrush26-embedded-memory-manager/
-├── README.md           # This file
-├── starter_harness.c   # Original scaffold
-├── level1/             # Level 1 implementation & docs
-├── level2/             # Level 2 implementation & docs
-├── level3/             # Level 3 implementation & docs
-├── level4/             # Level 4 implementation & benchmark
-└── scripts/
-    └── run_all.sh      # Comprehensive test script
+.
+├── level1/             # Fixed-size allocator
+├── level2/             # Variable-size allocator + fragmentation control
+├── level3/             # Task-aware supervisor + quotas/leak reporting
+├── level4/             # Handle-based allocator + compaction/OOM recovery
+├── bonus/              # Future GC scope notes
+├── scripts/            # Convenience scripts
+└── starter_harness.c   # Baseline scaffold from challenge
 ```
 
-## Build & Run Instructions
-To build and run all completed levels:
+## Build and Run
+
+Run all levels:
+
 ```bash
 bash scripts/run_all.sh
 ```
 
-To run the Level 4 Compaction Benchmark:
+Compile levels individually:
+
 ```bash
-gcc -o level4_bench level4/level4_benchmark.c
-./level4_bench
+gcc -std=c99 -Wall -O2 -o l1 level1/level1.c && ./l1
+gcc -std=c99 -Wall -O2 -o l2 level2/level2.c && ./l2
+gcc -std=c99 -Wall -O2 -o l3 level3/level3.c && ./l3
+gcc -std=c99 -Wall -O2 -o l4 level4/level4.c && ./l4
 ```
 
-## Future Work (Bonus)
-- Generational tracing garbage collection for automated memory management.
+Run Level 4 benchmark:
+
+```bash
+gcc -std=c99 -Wall -O2 -o level4_bench level4/level4_benchmark.c && ./level4_bench
+```
+
+## Submission Deliverables Mapping
+
+- One standalone runnable source file per level:
+  `level1/level1.c`, `level2/level2.c`, `level3/level3.c`, `level4/level4.c`.
+- One short README per level explaining:
+  design decisions, chosen strategy and rationale, and benchmark output.
+- Bonus file: `bonus/bonus.c` with future GC direction notes in `bonus/README.md`.
+
+This repository is structured directly around that format.
